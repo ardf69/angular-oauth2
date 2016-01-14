@@ -107,23 +107,38 @@ function OAuthProvider() {
        * Retrieves the `access_token` and stores the `response.data` on cookies
        * using the `OAuthToken`.
        *
-       * @param {object} user - Object with `username` and `password` properties.
+       * @param {object} request - Object with `username`, `password` and optional `scope` properties or with `code` and optional `redirect_uri` properties.
        * @param {object} config - Optional configuration object sent to `POST`.
        * @return {promise} A response promise.
        */
 
-      getAccessToken(user, options) {
+      getAccessToken(request, options) {
+        var data;
+        
         // Check if `user` has required properties.
-        if (!user || !user.username || !user.password) {
-          throw new Error('`user` must be an object with `username` and `password` properties.');
+        if (request && request.username && request.password) {
+          data = {
+            client_id: config.clientId,
+            grant_type: 'password',
+            username: request.username,
+            password: request.password
+          };
+          if (request.scope) {
+            data.scope = request.scope;
+          }
+        } else if (request && request.code) {
+          data = {
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            grant_type: 'authorization_code',
+            code: request.code,
+          };
+          if (request.redirect_uri) {
+            data.redirect_uri = request.redirect_uri;
+          }
+        } else {
+          throw new Error('`request` must be an object with `username`, `password` and optional `scope` properties or with `code` and optional `redirect_uri` properties.');
         }
-
-        var data = {
-          client_id: config.clientId,
-          grant_type: 'password',
-          username: user.username,
-          password: user.password
-        };
 
         if (null !== config.clientSecret) {
           data.client_secret = config.clientSecret;

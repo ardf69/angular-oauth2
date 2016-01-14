@@ -18,6 +18,28 @@
         $httpProvider.interceptors.push("oauthInterceptor");
     }
     oauthConfig.$inject = [ "$httpProvider" ];
+    function oauthInterceptor($q, $rootScope, OAuthToken) {
+        return {
+            request: function(config) {
+                if (OAuthToken.getAuthorizationHeader()) {
+                    config.headers = config.headers || {};
+                    config.headers.Authorization = OAuthToken.getAuthorizationHeader();
+                }
+                return config;
+            },
+            responseError: function(rejection) {
+                if (400 === rejection.status && rejection.data && ("invalid_request" === rejection.data.error || "invalid_grant" === rejection.data.error)) {
+                    OAuthToken.removeToken();
+                    $rootScope.$emit("oauth:error", rejection);
+                }
+                if (401 === rejection.status && (rejection.data && "invalid_token" === rejection.data.error) || rejection.headers("www-authenticate") && 0 === rejection.headers("www-authenticate").indexOf("Bearer")) {
+                    $rootScope.$emit("oauth:error", rejection);
+                }
+                return $q.reject(rejection);
+            }
+        };
+    }
+    oauthInterceptor.$inject = [ "$q", "$rootScope", "OAuthToken" ];
     var _prototypeProperties = function(child, staticProps, instanceProps) {
         if (staticProps) Object.defineProperties(child, staticProps);
         if (instanceProps) Object.defineProperties(child.prototype, instanceProps);
@@ -73,16 +95,31 @@
                         configurable: true
                     },
                     getAccessToken: {
-                        value: function getAccessToken(user, options) {
-                            if (!user || !user.username || !user.password) {
-                                throw new Error("`user` must be an object with `username` and `password` properties.");
+                        value: function getAccessToken(request, options) {
+                            var data;
+                            if (request && request.username && request.password) {
+                                data = {
+                                    client_id: config.clientId,
+                                    grant_type: "password",
+                                    username: request.username,
+                                    password: request.password
+                                };
+                                if (request.scope) {
+                                    data.scope = request.scope;
+                                }
+                            } else if (request && request.code) {
+                                data = {
+                                    client_id: config.clientId,
+                                    client_secret: config.clientSecret,
+                                    grant_type: "authorization_code",
+                                    code: request.code
+                                };
+                                if (request.redirect_uri) {
+                                    data.redirect_uri = request.redirect_uri;
+                                }
+                            } else {
+                                throw new Error("`request` must be an object with `username`, `password` and optional `scope` properties or with `code` and optional `redirect_uri` properties.");
                             }
-                            var data = {
-                                client_id: config.clientId,
-                                grant_type: "password",
-                                username: user.username,
-                                password: user.password
-                            };
                             if (null !== config.clientSecret) {
                                 data.client_secret = config.clientSecret;
                             }
@@ -240,27 +277,5 @@
         };
         this.$get.$inject = [ "$cookies" ];
     }
-    function oauthInterceptor($q, $rootScope, OAuthToken) {
-        return {
-            request: function(config) {
-                if (OAuthToken.getAuthorizationHeader()) {
-                    config.headers = config.headers || {};
-                    config.headers.Authorization = OAuthToken.getAuthorizationHeader();
-                }
-                return config;
-            },
-            responseError: function(rejection) {
-                if (400 === rejection.status && rejection.data && ("invalid_request" === rejection.data.error || "invalid_grant" === rejection.data.error)) {
-                    OAuthToken.removeToken();
-                    $rootScope.$emit("oauth:error", rejection);
-                }
-                if (401 === rejection.status && (rejection.data && "invalid_token" === rejection.data.error) || rejection.headers("www-authenticate") && 0 === rejection.headers("www-authenticate").indexOf("Bearer")) {
-                    $rootScope.$emit("oauth:error", rejection);
-                }
-                return $q.reject(rejection);
-            }
-        };
-    }
-    oauthInterceptor.$inject = [ "$q", "$rootScope", "OAuthToken" ];
     return ngModule;
 });
